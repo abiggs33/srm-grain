@@ -1,0 +1,12 @@
+[package]
+name = "srmgrain"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[build-dependencies]
+cbindgen = "0.29.0"
