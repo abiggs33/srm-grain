@@ -5,9 +5,28 @@ pub mod ffi;
 pub trait Dijkstra {
     // minimum Euclidean distance field using Dijkstra's (modified) algorithm
     fn med_field(&mut self);
+}
 
-    // burning area
-    fn exposed_surface(&self) -> f32;
+pub trait FastMarching {
+    // finds 1D analogue to surface area
+    fn perimeter(&self) -> f32;
+}
+
+struct Neighbor {
+    dx: isize,
+    dy: isize,
+    dist: f32,
+}
+
+impl Neighbor {
+    pub fn build(dx: isize, dy: isize) -> Self {
+        let (x, y) = (dx as f32, dy as f32);
+        Self {
+            dx,
+            dy,
+            dist: (x * x + y * y).sqrt(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -27,7 +46,10 @@ pub struct Cell {
 
 impl Default for Cell {
     fn default() -> Self {
-        Self { status: Default::default(), time: f32::INFINITY }
+        Self {
+            status: Default::default(),
+            time: f32::INFINITY,
+        }
     }
 }
 
@@ -77,7 +99,7 @@ impl GrainSlice {
     pub fn neighbors(&self, x: usize, y: usize) -> impl Iterator<Item = [usize; 2]> {
         let mut neighbors = Vec::new();
 
-        for [dx, dy] in geometry::DIR4 {
+        for [dx, dy] in geometry::DIR8 {
             let (nx, ny) = ((x as isize + dx) as usize, (y as isize + dy) as usize);
             if !self.inbounds(nx, ny) {
                 continue;
@@ -103,7 +125,11 @@ impl Dijkstra for GrainSlice {
             for x in 0..self.width {
                 if self.cells[y][x].status == Status::Reached {
                     self.cells[y][x].time = Default::default();
-                    heap.push(Node { x, y, time: Default::default() });
+                    heap.push(Node {
+                        x,
+                        y,
+                        time: Default::default(),
+                    });
                 }
             }
         }
@@ -131,18 +157,33 @@ impl Dijkstra for GrainSlice {
                 if new_time < self.cells[ny][nx].time {
                     self.cells[ny][nx].time = new_time;
                     self.cells[ny][nx].status = Status::Trial;
-                    heap.push(Node { x: nx, y: ny, time: new_time });
+                    heap.push(Node {
+                        x: nx,
+                        y: ny,
+                        time: new_time,
+                    });
                 }
             }
         }
     }
-
-    fn exposed_surface(&self) -> f32 {
-        // probably use fast marching cubes/squares for this
-        todo!()
-    }
 }
 
+#[allow(dead_code)]
 mod geometry {
+    #[rustfmt::skip]
     pub const DIR4: [[isize; 2]; 4] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+    #[rustfmt::skip]
+    pub const DIR8: [[isize; 2]; 8] = [
+        // Von-Neumann
+        [-1, 0 ],
+        [1 , 0 ],
+        [0 , -1],
+        [0 , 1 ],
+        // Moore
+        [1 , 1 ],
+        [1 , -1],
+        [-1, 1 ],
+        [-1, -1],
+    ];
 }

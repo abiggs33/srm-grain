@@ -4,7 +4,7 @@ fn main() {
     let mut grain = GrainSlice::new(100, 100);
 
     let (x, y) = (50, 50);
-    let radius = 5.0;
+    let radius = 2.0;
     for i in 0..grain.height {
         for j in 0..grain.width {
             let (x, y) = (x as f32, y as f32);
@@ -21,7 +21,7 @@ fn main() {
     // prints it with ascii into terinal -- just to see if it's working at all
     for y in 0..grain.height {
         for x in 0..grain.width {
-            if grain.cells[y][x].time < 30.0 {
+            if grain.cells[y][x].time < 10.0 {
                 print!(".");
             }
             else {
