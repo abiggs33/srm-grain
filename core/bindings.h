@@ -5,6 +5,10 @@ typedef struct MLMatrixFFI {
   unsigned long long len;
 } MLMatrixFFI;
 
-struct MLMatrixFFI *process_matrix_ffi(const double *input, unsigned long long len);
+void slot_matrix(const double *input, unsigned long long len, uint8_t slot);
+
+struct MLMatrixFFI *fetch_matrix(uint8_t slot);
 
 void free_matrix_ffi(struct MLMatrixFFI *ptr);
+
+struct MLMatrixFFI *process_matrix_ffi(const double *input, unsigned long long len);
