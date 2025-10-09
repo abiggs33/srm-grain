@@ -1,9 +1,21 @@
 #include <stddef.h>
 
+typedef struct Neighbor2 Neighbor2;
+
+typedef struct Neighbor3 Neighbor3;
+
 typedef struct MLMatrixFFI {
   double *data;
   unsigned long long len;
 } MLMatrixFFI;
+
+
+
+
+
+
+
+
 
 void slot_matrix(const double *input, unsigned long long len, uint8_t slot);
 

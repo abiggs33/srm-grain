@@ -1,41 +1,48 @@
-use std::{cmp::Ordering, collections::BinaryHeap};
+use crate::geometry::{Neighbor2, relations::DIR8};
 
+pub mod area_marching;
+pub mod distance_field;
 pub mod ffi;
+pub mod geometry;
 
 pub trait Dijkstra {
     // minimum Euclidean distance field using Dijkstra's (modified) algorithm
-    fn med_field(&mut self);
+    fn distance_field(&mut self);
 }
 
 pub trait FastMarching {
     // finds 1D analogue to surface area
-    fn perimeter(&self) -> f32;
+    fn trial_area(&self, elapsed_time: f32) -> f32;
 }
 
-struct Neighbor {
-    dx: isize,
-    dy: isize,
-    dist: f32,
+pub trait Grid2 {
+    fn width(&self) -> usize;
+
+    fn height(&self) -> usize;
+
+    fn inbounds(&self, x: usize, y: usize) -> bool;
+
+    fn index(&self, x: usize, y: usize, dx: isize, dy: isize) -> (usize, usize);
+
+    fn neighbors(&self, x: usize, y: usize) -> Vec<Neighbor2>;
+
+    fn get_cell(&self, x: usize, y: usize) -> Option<&Cell>;
+
+    fn get_cell_mut(&mut self, x: usize, y: usize) -> Option<&mut Cell>;
 }
 
-impl Neighbor {
-    pub fn build(dx: isize, dy: isize) -> Self {
-        let (x, y) = (dx as f32, dy as f32);
-        Self {
-            dx,
-            dy,
-            dist: (x * x + y * y).sqrt(),
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Status {
-    #[default]
-    Unreachable,
-    Reached,
-    Trial,
+    Solid,
+    None,
+    Front,
     Boundary,
+}
+
+impl Default for Status {
+    fn default() -> Self {
+        Self::Solid
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -46,48 +53,17 @@ pub struct Cell {
 
 impl Default for Cell {
     fn default() -> Self {
-        Self {
-            status: Default::default(),
-            time: f32::INFINITY,
-        }
+        Self { status: Default::default(), time: f32::INFINITY }
     }
 }
 
-pub struct GrainSlice {
+pub struct Domain {
     pub height: usize,
     pub width: usize,
     pub cells: Vec<Vec<Cell>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Node {
-    x: usize,
-    y: usize,
-    time: f32,
-}
-
-impl Eq for Node {}
-
-impl PartialEq for Node {
-    fn eq(&self, other: &Self) -> bool {
-        self.x == other.x && self.y == other.y && self.time == other.time
-    }
-}
-
-impl Ord for Node {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // this is intentionally reversed to mimic a min-heap
-        other.time.total_cmp(&self.time)
-    }
-}
-
-impl PartialOrd for Node {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl GrainSlice {
+impl Domain {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             height,
@@ -95,95 +71,49 @@ impl GrainSlice {
             cells: vec![vec![Cell::default(); width]; height],
         }
     }
+}
 
-    pub fn neighbors(&self, x: usize, y: usize) -> impl Iterator<Item = [usize; 2]> {
+impl Grid2 for Domain {
+    fn width(&self) -> usize {
+        self.width
+    }
+
+    fn height(&self) -> usize {
+        self.height
+    }
+
+    fn inbounds(&self, x: usize, y: usize) -> bool {
+        self.width > x && self.height > y
+    }
+
+    fn index(&self, x: usize, y: usize, dx: isize, dy: isize) -> (usize, usize) {
+        ((x as isize + dx) as usize, (y as isize + dy) as usize)
+    }
+
+    fn neighbors(&self, x: usize, y: usize) -> Vec<Neighbor2> {
         let mut neighbors = Vec::new();
-
-        for [dx, dy] in geometry::DIR8 {
-            let (nx, ny) = ((x as isize + dx) as usize, (y as isize + dy) as usize);
+        for neighbor in DIR8 {
+            let (nx, ny) = self.index(x, y, neighbor.dx, neighbor.dy);
             if !self.inbounds(nx, ny) {
                 continue;
             }
 
-            neighbors.push([nx, ny]);
+            neighbors.push(neighbor);
         }
-
-        neighbors.into_iter()
+        neighbors
     }
 
-    pub fn inbounds(&self, x: usize, y: usize) -> bool {
-        x < self.width && y < self.height
-    }
-}
-
-impl Dijkstra for GrainSlice {
-    fn med_field(&mut self) {
-        let mut heap = BinaryHeap::new();
-
-        // initlize the heap for Dijkstra MED
-        for y in 0..self.height {
-            for x in 0..self.width {
-                if self.cells[y][x].status == Status::Reached {
-                    self.cells[y][x].time = Default::default();
-                    heap.push(Node {
-                        x,
-                        y,
-                        time: Default::default(),
-                    });
-                }
-            }
+    fn get_cell(&self, x: usize, y: usize) -> Option<&Cell> {
+        if !self.inbounds(x, y) {
+            return None;
         }
-
-        while let Some(node) = heap.pop() {
-            let Node { x, y, time } = node;
-
-            if time > self.cells[y][x].time {
-                continue;
-            }
-
-            self.cells[y][x].status = Status::Reached;
-
-            let neighbors: Vec<[usize; 2]> = self.neighbors(x, y).collect();
-            for [nx, ny] in neighbors {
-                if self.cells[ny][nx].status != Status::Unreachable {
-                    continue;
-                }
-
-                let dx = (nx as f32 - x as f32) * 1.0; // this needs to be input
-                let dy = (ny as f32 - y as f32) * 1.0;
-                let distance = (dx * dx + dy * dy).sqrt();
-                let new_time = time + distance;
-
-                if new_time < self.cells[ny][nx].time {
-                    self.cells[ny][nx].time = new_time;
-                    self.cells[ny][nx].status = Status::Trial;
-                    heap.push(Node {
-                        x: nx,
-                        y: ny,
-                        time: new_time,
-                    });
-                }
-            }
-        }
+        Some(&self.cells[y][x])
     }
-}
 
-#[allow(dead_code)]
-mod geometry {
-    #[rustfmt::skip]
-    pub const DIR4: [[isize; 2]; 4] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-
-    #[rustfmt::skip]
-    pub const DIR8: [[isize; 2]; 8] = [
-        // Von-Neumann
-        [-1, 0 ],
-        [1 , 0 ],
-        [0 , -1],
-        [0 , 1 ],
-        // Moore
-        [1 , 1 ],
-        [1 , -1],
-        [-1, 1 ],
-        [-1, -1],
-    ];
+    fn get_cell_mut(&mut self, x: usize, y: usize) -> Option<&mut Cell> {
+        if !self.inbounds(x, y) {
+            return None;
+        }
+        Some(&mut self.cells[y][x])
+    }
 }
